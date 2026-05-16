@@ -26,11 +26,20 @@ app.get('/', (req, res) => {
 });
 
 // GET all leads from real database
+// GET /leads — fetch all leads, optional filter by status
 app.get('/leads', async (req, res) => {
+  const { status } = req.query;
+
   try {
-    const result = await pool.query(
-      'SELECT * FROM leads ORDER BY created_at DESC'
-    );
+    let query = 'SELECT * FROM leads ORDER BY created_at DESC';
+    let params = [];
+
+    if (status) {
+      query = 'SELECT * FROM leads WHERE status = $1 ORDER BY created_at DESC';
+      params = [status];
+    }
+
+    const result = await pool.query(query, params);
     res.json({
       count: result.rows.length,
       leads: result.rows
@@ -65,6 +74,38 @@ app.post('/leads', async (req, res) => {
   } catch (error) {
     console.error('DB Error:', error);
     res.status(500).json({ error: 'Failed to create lead' });
+  }
+});
+
+// PATCH /leads/:id — update lead status
+app.patch('/leads/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ['New', 'Contacted', 'Qualified', 'Closed'];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({
+      error: 'Invalid status. Must be one of: New, Contacted, Qualified, Closed'
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE leads SET status = $1 WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    res.json({
+      message: 'Lead updated successfully',
+      lead: result.rows[0]
+    });
+  } catch (error) {
+    console.error('DB Error:', error);
+    res.status(500).json({ error: 'Failed to update lead' });
   }
 });
 
