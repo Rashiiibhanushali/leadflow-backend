@@ -109,6 +109,45 @@ app.patch('/leads/:id', async (req, res) => {
   }
 });
 
+// POST /webhook/lead — accept lead from external source
+app.post('/webhook/lead', async (req, res) => {
+  // Security — validate secret token from header
+  const token = req.headers['x-webhook-secret'];
+  if (token !== process.env.WEBHOOK_SECRET) {
+    return res.status(401).json({ error: 'Unauthorised — invalid webhook secret' });
+  }
+
+  const { name, email, phone, source, status } = req.body;
+
+  // Validate required fields
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO leads (name, email, phone, source, status)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [
+        name,
+        email,
+        phone  || null,
+        source || 'Webhook',
+        status || 'New'
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Lead received via webhook',
+      lead: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Webhook Error:', error);
+    res.status(500).json({ error: 'Failed to process webhook' });
+  }
+});
+
 // ── Start Server ─────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
